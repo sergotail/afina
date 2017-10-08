@@ -4,24 +4,26 @@
 #include <stdexcept>
 
 namespace Afina {
-namespace Allocator {
+	namespace Allocator {
 
-enum class AllocErrorType {
-    InvalidFree,
-    NoMemory,
-};
+		enum class AllocErrorType {
+			InvalidFree,
+			NoMemory,
+			MemoryBlockUsage,
+			DefragmentationNeeded,
+		};
 
-class AllocError : std::runtime_error {
-private:
-    AllocErrorType type;
+		class AllocError : public std::runtime_error {
+		private:
+			AllocErrorType type;
 
-public:
-    AllocError(AllocErrorType _type, std::string message) : runtime_error(message), type(_type) {}
+		public:
+			AllocError(AllocErrorType _type, std::string message) : runtime_error(message), type(_type) {}
 
-    AllocErrorType getType() const { return type; }
-};
+			AllocErrorType getType() const { return type; }
+		};
 
-} // namespace Allocator
+	} // namespace Allocator
 } // namespace Afina
 
 #endif //  AFINA_ALLOCATOR_ERROR_H

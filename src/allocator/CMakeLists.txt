@@ -2,6 +2,8 @@
 set(SOURCE_FILES
     Simple.cpp
     Pointer.cpp
+    Memory.cpp
+    AllocUtils.cpp
 )
 
 add_library(Allocator ${SOURCE_FILES})
