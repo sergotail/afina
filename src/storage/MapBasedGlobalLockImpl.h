@@ -42,23 +42,9 @@ namespace Afina {
 			std::size_t const _max_size;
 			mutable std::list<std::pair<std::string, std::string>> _items_list;
 			std::unordered_map<std::string, decltype(_items_list.begin())> _hash_table;
-			void eraseLRU() {
-				std::unique_lock<std::mutex> guard(_lock);
-				while (_hash_table.size() > _max_size) {
-					auto lru = _items_list.end();
-					_hash_table.erase((--lru)->first);
-					_items_list.pop_back();
-				}
-			}
-			bool isKeyExists(std::string const & key) const {
-				std::unique_lock<std::mutex> guard(_lock);
-				return _hash_table.count(key) > 0;
-			}
-			void pushFront(std::string const & key, std::string const & value) {
-				std::unique_lock<std::mutex> guard(_lock);
-				_items_list.push_front(make_pair(key, value));
-				_hash_table.insert(make_pair(key, _items_list.begin()));
-			}
+			void eraseLRU();
+			bool isKeyExists(std::string const & key) const;
+			void pushFront(std::string const & key, std::string const & value);
 		};
 
 	} // namespace Backend

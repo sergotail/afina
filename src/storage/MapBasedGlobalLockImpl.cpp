@@ -3,6 +3,26 @@
 namespace Afina {
 	namespace Backend {
 
+		void MapBasedGlobalLockImpl::eraseLRU() {
+			std::unique_lock<std::mutex> guard(_lock);
+			while (_hash_table.size() > _max_size) {
+				auto lru = _items_list.end();
+				_hash_table.erase((--lru)->first);
+				_items_list.pop_back();
+			}
+		}
+		
+		bool MapBasedGlobalLockImpl::isKeyExists(std::string const & key) const {
+			std::unique_lock<std::mutex> guard(_lock);
+			return _hash_table.count(key) > 0;
+		}
+		
+		void MapBasedGlobalLockImpl::pushFront(std::string const & key, std::string const & value) {
+			std::unique_lock<std::mutex> guard(_lock);
+			_items_list.push_front(make_pair(key, value));
+			_hash_table.insert(make_pair(key, _items_list.begin()));
+		}
+
 		// See MapBasedGlobalLockImpl.h
 		bool MapBasedGlobalLockImpl::Put(std::string const & key, std::string const & value) {
 			Delete(key);
