@@ -1,7 +1,9 @@
 #include <chrono>
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <uv.h>
+#include <unistd.h>
 
 #include <cxxopts.hpp>
 
@@ -32,6 +34,53 @@ void timer_handler(uv_timer_t *handle) {
     std::cout << "Start passive metrics collection" << std::endl;
 }
 
+void savePidToFile(pid_t const pid, std::string const & filename) {
+    std::ofstream outfile(filename, std::ofstream::out);
+    outfile << pid;
+    outfile.close();
+}
+
+int afinaWorker(Application & app) {
+    // Init local loop. It will react to signals and performs some metrics collections. Each
+    // subsystem is able to push metrics actively, but some metrics could be collected only
+    // by polling, so loop here will does that work
+    uv_loop_t loop;
+    uv_loop_init(&loop);
+
+    uv_signal_t sig;
+    uv_signal_init(&loop, &sig);
+    uv_signal_start(&sig, signal_handler, SIGTERM | SIGKILL);
+    sig.data = &app;
+
+    uv_timer_t timer;
+    uv_timer_init(&loop, &timer);
+    timer.data = &app;
+    uv_timer_start(&timer, timer_handler, 0, 5000);
+
+    // Start services
+    try {
+        app.storage->Start();
+        app.server->Start(8080);
+
+        // Freeze current thread and process events
+        std::cout << "Application started" << std::endl;
+        uv_run(&loop, UV_RUN_DEFAULT);
+
+        // Stop services
+        app.server->Stop();
+        app.server->Join();
+        app.storage->Stop();
+
+        std::cout << "Application stopped" << std::endl;
+    } 
+    catch (std::exception &e) {
+        std::cerr << "Fatal error" << e.what() << std::endl;
+	return -1;
+    }
+
+    return 0;
+}
+
 int main(int argc, char **argv) {
     // Build version
     // TODO: move into Version.h as a function
@@ -48,6 +97,8 @@ int main(int argc, char **argv) {
         // and simplify validation below
         options.add_options()("s,storage", "Type of storage service to use", cxxopts::value<std::string>());
         options.add_options()("n,network", "Type of network service to use", cxxopts::value<std::string>());
+	options.add_options()("d,daemon", "Start as a daemon", cxxopts::value<bool>());
+	options.add_options()("p,pidsave", "Save daemon PID to specified file", cxxopts::value<std::string>());
         options.add_options()("h,help", "Print usage info");
         options.parse(argc, argv);
 
@@ -89,41 +140,35 @@ int main(int argc, char **argv) {
     } else {
         throw std::runtime_error("Unknown network type");
     }
-
-    // Init local loop. It will react to signals and performs some metrics collections. Each
-    // subsystem is able to push metrics actively, but some metrics could be collected only
-    // by polling, so loop here will does that work
-    uv_loop_t loop;
-    uv_loop_init(&loop);
-
-    uv_signal_t sig;
-    uv_signal_init(&loop, &sig);
-    uv_signal_start(&sig, signal_handler, SIGTERM | SIGKILL);
-    sig.data = &app;
-
-    uv_timer_t timer;
-    uv_timer_init(&loop, &timer);
-    timer.data = &app;
-    uv_timer_start(&timer, timer_handler, 0, 5000);
-
-    // Start services
-    try {
-        app.storage->Start();
-        app.server->Start(8080);
-
-        // Freeze current thread and process events
-        std::cout << "Application started" << std::endl;
-        uv_run(&loop, UV_RUN_DEFAULT);
-
-        // Stop services
-        app.server->Stop();
-        app.server->Join();
-        app.storage->Stop();
-
-        std::cout << "Application stopped" << std::endl;
-    } catch (std::exception &e) {
-        std::cerr << "Fatal error" << e.what() << std::endl;
+    
+    // Daemonisation settings
+    pid_t pid;
+    bool daemonize = options.count("daemon") > 0;
+    bool save_pid = options.count("pidsave") > 0;
+    if (!daemonize && save_pid) {
+	throw cxxopts::option_not_present_exception("d (daemon)");
     }
-
-    return 0;
+    if (daemonize) {
+	switch (pid = fork()) {
+	case -1:
+	    throw std::runtime_error("Process daemonisation failed");
+	case 0:
+	    umask(0);
+	    setsid();
+	    //chdir("/");
+	    close(STDIN_FILENO);
+	    close(STDOUT_FILENO);
+	    close(STDERR_FILENO);
+	    if (save_pid) {
+	        savePidToFile(getpid(), options["pidsave"].as<std::string>());
+            }
+	    return afinaWorker(app);
+	default:
+	    std::cout << "Process successfully daemonized" << std::endl;
+	    return 0;
+	}
+    }
+    else {
+	return afinaWorker(app);
+    }
 }
